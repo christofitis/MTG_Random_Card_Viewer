@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Random MTG Card Viewer</title>
+  <style>
+    html, body {
+      margin: 0;
+      padding: 0;
+      background-color: black;
+      height: 100%;
+      overflow: hidden;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      font-family: sans-serif;
+    }
+    img {
+      max-width: 100%;
+      max-height: 100%;
+      object-fit: contain;
+      transition: opacity 0.3s, transform 0.2s;
+      position: relative;
+      z-index: 1;
+    }
+    #help {
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      color: white;
+      background: rgba(0, 0, 0, 0.7);
+      padding: 10px;
+      border-radius: 8px;
+      font-size: 14px;
+      z-index: 2;
+      display: none;
+      white-space: pre;
+    }
+    #key-indicator {
+      position: absolute;
+      top: 10px;
+      right: 10px;
+      color: white;
+      background: rgba(0, 0, 0, 0.7);
+      padding: 6px 10px;
+      border-radius: 6px;
+      font-size: 14px;
+      z-index: 3;
+      opacity: 0;
+      transition: opacity 0.3s;
+    }
+  </style>
+</head>
+<body>
+  <img id="card"  alt="Loading MTG card...">
+  <div id="help">
+    Hotkeys:
+    ← / → : Step back/forward in history (pauses)
+    ↑ / ↓ : Move image up/down
+    Space : Pause/resume slideshow
+    - / = : Darker / Lighter
+    0–9   : Change interval (0 = 10s, 9 = 90s)
+    A     : Toggle full card / art view
+    N     : Show new card immediately
+    R     : Restart slideshow (reload card)
+    H     : Toggle this help
+    S     : Log current card image to console
+  </div>
+  <div id="key-indicator"></div>
+
+<script>
+  const cardImg = document.getElementById('card');
+  const helpBox = document.getElementById('help');
+  const keyIndicator = document.getElementById('key-indicator');
+  const history = [];
+  let currentIndex = -1;
+  let isPaused = false;
+  let brightness = 1.0;
+  let intervalTime = 10000;
+  let interval;
+  let artMode = false;
+  let verticalOffset = 0;
+  let keyDisplayTimeout = null;
+  let finalFantasyMode = false; // <-- NEW: Toggle flag
+
+  async function loadRandomCard(force = false) {
+    if (isPaused && !force) return;
+
+    try {
+      const baseUrl = 'https://api.scryfall.com/cards/random';
+      const query = finalFantasyMode ? '?q=set:fin' : '';
+      const response = await fetch(baseUrl + query);
+      const card = await response.json();
+      let normalUrl = null;
+      let artUrl = null;
+
+      if (card.image_uris) {
+        normalUrl = card.image_uris.png;
+        artUrl = card.image_uris.art_crop;
+      } else if (card.card_faces && card.card_faces[0].image_uris) {
+        normalUrl = card.card_faces[0].image_uris.png;
+        artUrl = card.card_faces[0].image_uris.art_crop;
+      }
+
+      if (normalUrl) {
+        const entry = { url: normalUrl, artUrl: artUrl || normalUrl };
+        history.push(entry);
+        if (history.length > 100) history.shift();
+        currentIndex = history.length - 1;
+        updateImage(entry);
+      } else {
+        cardImg.alt = "Card image not available";
+      }
+    } catch (error) {
+      console.error('Error loading card:', error);
+      cardImg.alt = "Failed to load card.";
+    }
+  }
+
+  function updateImage(entry) {
+    cardImg.src = artMode ? entry.artUrl : entry.url;
+    applyTransform();
+  }
+
+  function showCardAt(index) {
+    if (index >= 0 && index < history.length) {
+      currentIndex = index;
+      updateImage(history[index]);
+    }
+  }
+
+  function togglePause() {
+    isPaused = !isPaused;
+    showAction(isPaused ? "Paused" : "Resumed");
+    if (!isPaused) loadRandomCard();
+  }
+
+  function adjustBrightness(amount) {
+    brightness = Math.min(1.0, Math.max(0.1, brightness + amount));
+    cardImg.style.opacity = brightness;
+    const percent = Math.round(brightness * 100);
+    showAction(`Brightness ${percent}%`);
+  }
+
+  function changeInterval(seconds) {
+    intervalTime = seconds * 1000;
+    clearInterval(interval);
+    interval = setInterval(() => {
+      if (!isPaused) loadRandomCard();
+    }, intervalTime);
+    showAction(`Interval: ${seconds}s`);
+  }
+
+  function restart() {
+    isPaused = false;
+    showAction("Restarting...");
+    loadRandomCard();
+  }
+
+  function toggleHelp() {
+    helpBox.style.display = helpBox.style.display === 'none' ? 'block' : 'none';
+    showAction(helpBox.style.display === 'block' ? "Help Shown" : "Help Hidden");
+  }
+
+  function logCard() {
+    if (history[currentIndex]) {
+      console.log('Current card image:', artMode ? history[currentIndex].artUrl : history[currentIndex].url);
+      showAction("Logged card to console");
+    }
+  }
+
+  function applyTransform() {
+    cardImg.style.transform = `translateY(${verticalOffset}px)`;
+  }
+
+  function showAction(text) {
+    keyIndicator.textContent = text;
+    keyIndicator.style.opacity = 1;
+    if (keyDisplayTimeout) clearTimeout(keyDisplayTimeout);
+    keyDisplayTimeout = setTimeout(() => {
+      keyIndicator.style.opacity = 0;
+    }, 3000);
+  }
+
+  // Key input
+  window.addEventListener('keydown', (e) => {
+    const key = e.key;
+
+    if (key >= '0' && key <= '9') {
+      const seconds = key === '0' ? 10 : parseInt(key) * 10;
+      changeInterval(seconds);
+      return;
+    }
+
+    switch (key) {
+      case ' ':
+        e.preventDefault();
+        togglePause();
+        break;
+      case 'ArrowLeft':
+        e.preventDefault();
+        if (currentIndex > 0) {
+          showCardAt(currentIndex - 1);
+          isPaused = true;
+          showAction("Previous Card");
+        }
+        break;
+      case 'ArrowRight':
+        e.preventDefault();
+        if (currentIndex < history.length - 1) {
+          showCardAt(currentIndex + 1);
+          isPaused = true;
+          showAction("Next Card");
+        }
+        break;
+      case 'ArrowUp':
+        verticalOffset -= 5;
+        applyTransform();
+        showAction("Moved Up");
+        break;
+      case 'ArrowDown':
+        verticalOffset += 5;
+        applyTransform();
+        showAction("Moved Down");
+        break;
+      case '=':
+        adjustBrightness(0.1);
+        break;
+      case '-':
+        adjustBrightness(-0.1);
+        break;
+      case 'a':
+      case 'A':
+        artMode = !artMode;
+        if (history[currentIndex]) updateImage(history[currentIndex]);
+        showAction(artMode ? "Art View Enabled" : "Full Card View");
+        break;
+      case 'n':
+      case 'N':
+        loadRandomCard(true);
+        showAction("Next Random Card");
+        break;
+      case 'r':
+      case 'R':
+        restart();
+        break;
+      case 'h':
+      case 'H':
+        toggleHelp();
+        break;
+      case 's':
+      case 'S':
+        logCard();
+        break;
+      case 'f':
+      case 'F':
+        finalFantasyMode = !finalFantasyMode;
+        showAction(finalFantasyMode ? "Final Fantasy Mode ON" : "Final Fantasy Mode OFF");
+        loadRandomCard(true);
+        break;
+    }
+  });
+
+  // Start slideshow
+  loadRandomCard();
+  interval = setInterval(() => {
+    if (!isPaused) loadRandomCard();
+  }, intervalTime);
+</script>
+
+</body>
+</html>
