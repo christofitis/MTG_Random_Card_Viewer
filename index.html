@@ -22,6 +22,7 @@
       transition: opacity 0.3s, transform 0.2s;
       position: relative;
       z-index: 1;
+      opacity: 0; /* Start hidden */
     }
     #help {
       position: absolute;
@@ -52,7 +53,7 @@
   </style>
 </head>
 <body>
-  <img id="card"  alt="Loading MTG card...">
+  <img id="card" alt="Loading MTG card...">
   <div id="help">
     Hotkeys:
     ← / → : Step back/forward in history (pauses)
@@ -69,6 +70,7 @@
   <div id="key-indicator"></div>
 
 <script>
+document.addEventListener('DOMContentLoaded', () => {
   const cardImg = document.getElementById('card');
   const helpBox = document.getElementById('help');
   const keyIndicator = document.getElementById('key-indicator');
@@ -81,7 +83,7 @@
   let artMode = false;
   let verticalOffset = 0;
   let keyDisplayTimeout = null;
-  let finalFantasyMode = false; // <-- NEW: Toggle flag
+  let finalFantasyMode = false;
 
   async function loadRandomCard(force = false) {
     if (isPaused && !force) return;
@@ -118,6 +120,10 @@
   }
 
   function updateImage(entry) {
+    cardImg.style.opacity = 0; // Hide before loading new image
+    cardImg.onload = () => {
+      cardImg.style.opacity = brightness;
+    };
     cardImg.src = artMode ? entry.artUrl : entry.url;
     applyTransform();
   }
@@ -182,7 +188,6 @@
     }, 3000);
   }
 
-  // Key input
   window.addEventListener('keydown', (e) => {
     const key = e.key;
 
@@ -266,6 +271,10 @@
   interval = setInterval(() => {
     if (!isPaused) loadRandomCard();
   }, intervalTime);
+
+  // Show help on first load
+  toggleHelp();
+});
 </script>
 
 </body>
